@@ -1,0 +1,238 @@
+esphome:
+  name: rf-fan-remote
+  friendly_name: "RF_Fan_remote"
+
+esp32:
+  board: esp32dev 
+  framework:
+    type: arduino
+
+
+remote_transmitter:
+  pin: 
+    number: GPIO26 #use the GPIO Pin that was connected to RF Transmitter data pin
+    inverted: false
+  carrier_duty_percent: 100%  
+  # non_blocking: true
+
+# 2. Create a global variable to track the rolling counter (1 through 8)
+globals:
+  - id: rf_counter
+    type: int
+    restore_value: yes # Remembers the counter even if the ESP reboots
+    initial_value: '1'
+
+# #you need to use rf reciever to determine the codes
+# RF Code Structure & Patterns:
+# Every 32-bit code sent by the remote can be divided into three parts. Let's look at E06D0678 (Power On) as an example:
+# Prefix / Device ID (First 5 Hex Digits - E06D0): This is constant across every single button press. It identifies your specific remote/device.
+# Action Command (The 6th Hex Digit - 6): This single hex character determines what action the fan should take.
+# Rolling Counter (Last 2 Hex Digits - 78): This is a sequential counter that changes with every button press on the remote, regardless of which button is pressed.
+# The Action Mappings:
+# By isolating the 6th hex digit, we can perfectly map the buttons:
+# Power Off: E
+# Power On: 6
+# Speed 1: 5
+# Speed 2: F
+# Speed 3: 4
+# Speed 4: 3
+# Speed 5: 2
+# The Rolling Counter Pattern
+# If you look at the last two characters across sequence presses, they cycle through 8 specific states. They increment by 0x0F (decimal 15) with every press and wrap around after 8 steps:
+
+# 3. If you have more or less fans - Add or delete in the case statement. Also add or remove in the fan entity. 
+script:
+  - id: send_fan_command
+    parameters:
+      fan_id: int
+      action_code: int
+    then:
+      - remote_transmitter.transmit_rc_switch_raw:
+          protocol: 1
+          repeat:
+            times: 8
+            wait_time: 0ms
+          code: !lambda |-
+            // Step A & B: Calculate rolling suffix and increment
+            int suffix = id(rf_counter) * 15;
+            id(rf_counter) += 1;
+            if (id(rf_counter) > 8) {
+              id(rf_counter) = 1;
+            }
+            
+            // Step C: Determine which fan prefix to use based on fan_id
+            uint32_t base = 0;
+            switch (fan_id) {
+              case 1: base = 0xAAAAA000; break; // Replace the AAAAA with the hexcode read from remote. e.g., if the code recieved is E06D0E0F then the AAAAA should be replaced with E06D0 here base = 0xE06D0000
+              case 2: base = 0xAAAAA000; break; // Fan 2 - Replace the AAAAA - see above
+              case 3: base = 0xAAAAA000; break; // FAN 3 - Replace the AAAAA - see above
+              case 4: base = 0xAAAAA000; break; // FAN 4 - Replace the AAAAA - see above
+              case 5: base = 0xAAAAA000; break; // Fan 5 - Replace the AAAAA - see above
+              default: return ""; // Failsafe
+            }
+            
+            // Step D: Construct the final code
+            uint32_t action_shifted = action_code << 8;
+            uint32_t full_code = base | action_shifted | suffix;
+            
+            // Step E: Convert to binary string
+            std::string bin_str = "";
+            for (int i = 31; i >= 0; i--) {
+              bin_str += ((full_code >> i) & 1) ? "1" : "0";
+            }
+            return bin_str;
+
+
+fan:
+  # --- FAN 1 (GBR) ---
+  - platform: template
+    name: "Fan 1" # Rename as needed
+    id: rf_fan_1
+    speed_count: 5
+    
+    on_turn_on:
+      - script.execute:
+          id: send_fan_command
+          fan_id: 1
+          action_code: 0x06
+
+    on_turn_off:
+      - script.execute:
+          id: send_fan_command
+          fan_id: 1
+          action_code: 0x0E
+
+    on_speed_set:
+      - lambda: |-
+          int code = 0;
+          if (x == 1) code = 0x05;
+          if (x == 2) code = 0x0F;
+          if (x == 3) code = 0x04;
+          if (x == 4) code = 0x03;
+          if (x == 5) code = 0x02;
+          if (code != 0) id(send_fan_command).execute(1, code); //# Executes for Fan 1
+
+  # --- FAN 2 (New) ---
+  - platform: template
+    name: "Fan 2" # Rename as needed
+    id: rf_fan_2
+    speed_count: 5
+    
+    on_turn_on:
+      - script.execute:
+          id: send_fan_command
+          fan_id: 2
+          action_code: 0x06
+
+    on_turn_off:
+      - script.execute:
+          id: send_fan_command
+          fan_id: 2
+          action_code: 0x0E
+
+    on_speed_set:
+      - lambda: |-
+          int code = 0;
+          if (x == 1) code = 0x05;
+          if (x == 2) code = 0x0F;
+          if (x == 3) code = 0x04;
+          if (x == 4) code = 0x03;
+          if (x == 5) code = 0x02;
+          if (code != 0) id(send_fan_command).execute(2, code); //# Executes for Fan 2
+
+  # --- FAN 3 (New) ---
+  - platform: template
+    name: "Fan 3" # Rename as needed
+    id: rf_fan_3
+    speed_count: 5
+    
+    on_turn_on:
+      - script.execute:
+          id: send_fan_command
+          fan_id: 3
+          action_code: 0x06
+
+    on_turn_off:
+      - script.execute:
+          id: send_fan_command
+          fan_id: 3
+          action_code: 0x0E
+
+    on_speed_set:
+      - lambda: |-
+          int code = 0;
+          if (x == 1) code = 0x05;
+          if (x == 2) code = 0x0F;
+          if (x == 3) code = 0x04;
+          if (x == 4) code = 0x03;
+          if (x == 5) code = 0x02;
+          if (code != 0) id(send_fan_command).execute(3, code); //# Executes for Fan 3
+  # --- FAN 4 (New) ---
+  - platform: template
+    name: "Fan 4" # Rename as needed
+    id: rf_fan_4
+    speed_count: 5
+    
+    on_turn_on:
+      - script.execute:
+          id: send_fan_command
+          fan_id: 4
+          action_code: 0x06
+
+    on_turn_off:
+      - script.execute:
+          id: send_fan_command
+          fan_id: 4
+          action_code: 0x0E
+
+    on_speed_set:
+      - lambda: |-
+          int code = 0;
+          if (x == 1) code = 0x05;
+          if (x == 2) code = 0x0F;
+          if (x == 3) code = 0x04;
+          if (x == 4) code = 0x03;
+          if (x == 5) code = 0x02;
+          if (code != 0) id(send_fan_command).execute(4, code); //# Executes for Fan 4
+  # --- FAN 5 (New) ---
+  - platform: template
+    name: "Fan 5" # Rename as needed
+    id: rf_fan_5
+    speed_count: 5
+    
+    on_turn_on:
+      - script.execute:
+          id: send_fan_command
+          fan_id: 5
+          action_code: 0x06
+
+    on_turn_off:
+      - script.execute:
+          id: send_fan_command
+          fan_id: 5
+          action_code: 0x0E
+
+    on_speed_set:
+      - lambda: |-
+          int code = 0;
+          if (x == 1) code = 0x05;
+          if (x == 2) code = 0x0F;
+          if (x == 3) code = 0x04;
+          if (x == 4) code = 0x03;
+          if (x == 5) code = 0x02;
+          if (code != 0) id(send_fan_command).execute(5, code); //# Executes for Fan 5
+    
+logger:
+  level: DEBUG
+# Enable Home Assistant API
+api:
+  encryption:	
+    key: <use your encryption key>
+
+ota:
+  - platform: esphome
+    password: "useyourownpassword" 
+
+wifi:
+  ssid: <yourwifissid>
+  password: <yourwifipassword>
